@@ -51,6 +51,14 @@ finish the keyboard interface verilog code and successfully compile
 keyboard worked in the DE1-SOC board to control spaceship moving around 
 modify the bmp picture for all sprite	
 
+11.16.2017 Thur dongfang cui
+	23:00-2:46
+	-replot the diagram of extendable modules
+	-tried to merge the part3_revised and the spaceship code
+	
+11.17.2017 Fri dongfang cui
+	19:00-24:00
+	-merged code passed the compilation not tested
 
 
 

@@ -1,0 +1,248 @@
+
+module moving_box(CLOCK_50, KEY, SW, VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_R, VGA_G, VGA_B);
+
+	input	CLOCK_50;				//	50 MHz
+	// Declare your inputs and outputs here
+	input [9:0] SW;
+	input [3:0] KEY;
+	
+	// Do not change the following outputsfile
+
+	output			VGA_CLK;   				//	VGA Clock
+	output			VGA_HS;					//	VGA H_SYNC
+	output			VGA_VS;					//	VGA V_SYNC
+	output			VGA_BLANK_N;				//	VGA BLANK
+	output			VGA_SYNC_N;				//	VGA SYNC
+	output	[9:0]	VGA_R;   				//	VGA Red[9:0]
+	output	[9:0]	VGA_G;	 				//	VGA Green[9:0]
+	output	[9:0]	VGA_B;   				//	VGA Blue[9:0]
+	
+	wire resetn, load;
+	assign load = ~KEY[1];
+	assign resetn = KEY[0];
+	wire [2:0] color;
+	wire [7:0] X;
+	wire [6:0] Y;
+	wire enable_x, enable_y, ld_color, erase, go;
+	
+//	wire clock60fps;
+//	rateDivider R1(CLOCK_50, resetn, clock60fps);
+   wire DD, DE, SD, SE;
+	
+	control_top c2(CLOCK_50, resetn, load, DD, DE, SD, SE, enable_x, enable_y, ld_color, erase, go);
+	
+	datapath_top d2(CLOCK_50, resetn, SW[2:0], enable_x, enable_y, ld_color, X, Y, color);
+	
+	fill D1(CLOCK_50, X, Y, color, resetn, go, erase, SD, SE, DD, DE, VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_R, VGA_G, VGA_B);
+//	fill f1(CLOCK_50, X, Y, color, resetn, go, erase, SD, DD, VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_R, VGA_G, VGA_B);
+//	
+//	erase e1(CLOCK_50, X, Y, color, resetn, go, erase, SE, DE, VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_R, VGA_G, VGA_B);
+ 
+ endmodule
+ 
+ 
+ 
+ 
+ 
+ 
+ module control_top(input clk, resetn, load, iDD, iDE,  output reg oSD, oSE, enable_x, enable_y, ld_color, erase, go);
+	
+	 reg [3:0] current_state, next_state; 
+	 reg [27:0] count;
+	 reg [27:0] ecount;
+	    
+    localparam  S_RESET            = 4'd0,
+	 
+                S_DRAW             = 4'd1,
+					 S_ACKDRAW          = 4'd2,
+					 
+                S_WAIT             = 4'd3,
+					 
+                S_ERASE        	  = 4'd4,
+					 S_ACKERASE         = 4'd5,
+					 
+					 S_EWAIT            = 4'd6,
+					 S_MOVE			     = 4'd7;
+					
+    // Next state logic aka our state table
+    always@(*)
+    begin: state_table 
+            case (current_state)
+				    S_RESET:       next_state = load ? S_DRAW : S_RESET;
+                S_DRAW:        next_state = iDD ? S_ACKDRAW : S_DRAW;
+					 S_ACKDRAW:     next_state = S_WAIT;
+					 
+                S_WAIT :       next_state = (count ==  28'd12500000)? S_ERASE : S_WAIT;//wait 0.25s  28'd12500000
+					 
+                S_ERASE:       next_state = iDE ? S_ACKERASE : S_ERASE;
+					 S_ACKERASE:    next_state = S_EWAIT;
+					 
+					 S_EWAIT:       next_state = (ecount == 28'd2000000)? S_MOVE : S_EWAIT;//28'd1666666
+					 
+					 S_MOVE:			 next_state = S_DRAW;
+					 
+					default:        next_state = S_RESET;
+				endcase
+				
+    end // state_table
+
+	 // Output logic aka all of our datapath control signals
+    always @(*)
+    begin: enable_signals
+        // By default make all our signals 0
+		  enable_x = 1'b0; 
+		  enable_y = 1'b0; 
+		  ld_color = 1'b0;
+		  erase    = 1'b0; 
+		  go       = 1'b0;
+		  oSD      = 1'b0;
+		  oSE      = 1'b0;
+       	  
+        case (current_state)
+		  
+				S_RESET:  ld_color = 1'b1;
+				
+            S_DRAW:   begin
+					oSD = 1'b1;
+					end
+					
+				S_ACKDRAW: oSD = 1'b0;
+				
+            S_ERASE:  begin
+					//erase    = 1'b1; //only need to erase to trigger the erase process
+//					go       = 1'b1;
+				   oSE = 1'b1;
+				end
+				S_ACKERASE: oSE = 1'b0;
+				
+			   S_MOVE:	begin
+				   enable_x = 1'b1; 
+					enable_y = 1'b1;
+				end
+				
+        endcase
+    end // enable_signals
+
+    always@(posedge clk)
+    begin: state_FFs
+	 
+        if(!resetn)
+				begin
+					current_state <= S_RESET;
+					count <= 28'd0;  
+					ecount <= 28'd0;
+				end
+				
+        else if((current_state == S_WAIT) && (count != 28'd12500000))//count != 28'd12500000
+				begin
+				current_state <= next_state;
+				count <= count + 1'b1;
+				end
+				
+		  else if((current_state == S_EWAIT) && (ecount != 28'd2000000))//ecount != 28'd1666666
+				begin
+				current_state <= next_state;
+				ecount <= ecount + 1'b1;
+			end
+				
+		  else if(current_state == S_ERASE)
+				begin
+					current_state <= next_state;
+					count <= 28'd0;
+					ecount <= 28'd0;
+				end
+				
+		  else
+				current_state <= next_state;
+			
+    end // state_FFS
+endmodule
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+module datapath_top(clk, resetn, data_in, enable_x, enable_y, ld_color, x_final, y_final, color);
+	input clk, resetn, enable_x, enable_y, ld_color;
+	input [2:0] data_in;
+	output reg [7:0] x_final;
+	output reg [6:0] y_final;
+	output reg [2:0] color;
+	
+	reg H, V;
+	
+	
+	always@(posedge clk) begin
+		if(ld_color)
+			color[2:0] <= data_in[2:0];
+	end
+	
+	always@(*) begin
+		if(!resetn) begin
+			H <= 1'b0;
+			V <= 1'b0;
+		end
+		
+		if((x_final == 8'b0) && (H == 0))
+			H <= 1;
+		else if((x_final == 8'd156) && (H == 1))
+			H <= 0;
+		
+		if((y_final == 7'b0) && (V == 0))
+			V <= 1;
+		else if((y_final == 7'd116) && (V == 1))
+			V <= 0;
+	end
+	
+	always@(posedge clk) begin
+		if(!resetn)
+			x_final <= 8'b0;
+		else if(enable_x && (H == 0))
+			x_final <= x_final - 1;
+		else if(enable_x && (H == 1))
+			x_final <= x_final + 1;
+	end
+	
+	always@(posedge clk) begin
+		if(!resetn)
+			y_final <= 7'b0;
+		else if(enable_y && (V == 0))
+			y_final <= y_final - 1;
+		else if(enable_y && (V == 1))
+			y_final <= y_final + 1;
+	end
+ 
+ endmodule                                                 
+
+ 
+
+ 
+ module rateDivider(input clk, input clear_n, output reg result);
+	reg [28:0]count;
+   wire enable;
+	reg [28:0]number;
+	
+	always @(*)
+	begin
+		number[28:0] = 28'd833334;
+	end
+
+	
+  assign enable = (count == number[28:0])? 1'b1 : 1'b0;
+
+ //when count is equal to the number, enable is 1, reset the count, pass out the enable to the 4-bits counter
+  always @ (posedge clk) begin
+    if(enable == 1'b1 | clear_n == 1'b0)
+      count <= 0; // reset
+		
+    else if(enable == 1'b0)
+      count <= count + 1; // count
+  end
+
+  
+  	always@(*)begin
+		result = enable;
+	end
+endmodule

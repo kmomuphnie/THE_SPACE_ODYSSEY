@@ -1,0 +1,8 @@
+
+State Machine - |STEM|fill:D1|control:c1|current_state
+Name current_state.S_FinishDraw current_state.S_ERASE current_state.S_PLOT current_state.S_IDLE current_state.S_FinishErase 
+current_state.S_IDLE 0 0 0 0 0 
+current_state.S_PLOT 0 0 1 1 0 
+current_state.S_ERASE 0 1 0 1 0 
+current_state.S_FinishDraw 1 0 0 1 0 
+current_state.S_FinishErase 0 0 0 1 1 
